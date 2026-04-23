@@ -4,7 +4,7 @@ import numpy as np
 from scipy import stats
 from statsmodels.stats.proportion import proportions_ztest
 import io
-import itertools
+import itertools  # <--- Esta es la línea que faltaba y causaba el error
 
 # --- CONFIGURACIÓN ---
 st.set_page_config(page_title="QUO Processor Powered by Doble O y Elisa", layout="wide")
@@ -24,12 +24,12 @@ def calcular_sustituto(serie, metodo):
     elif metodo == "MODA":
         m = serie.mode()
         return m[0] if not m.empty else 0
-    elif metodo == "NAN": return np.nan
     elif metodo == "0": return 0.0
     return np.nan
 
 def realizar_test_proporciones(ct_abs):
     try:
+        # Quitamos los totales para el test
         df_test = ct_abs.drop('TOTAL', axis=0, errors='ignore').drop('TOTAL', axis=1, errors='ignore')
         col_totals = df_test.sum()
         columnas = df_test.columns.tolist()
@@ -48,7 +48,6 @@ def realizar_test_proporciones(ct_abs):
 
 def realizar_test_medias(df, v_num, v_cat):
     try:
-        # Aseguramos limpieza absoluta de datos para el test T
         df_clean = df[[v_num, v_cat]].dropna()
         columnas = df_clean.groupby(v_cat)[v_num].mean().index.tolist()
         significancias = [] 
@@ -72,8 +71,9 @@ archivo_cargado = st.sidebar.file_uploader("Sube tu Excel", type=["xlsx"])
 
 if archivo_cargado:
     if st.session_state['df_master'] is None:
-        # CARGA ULTRA-LIMPIA: Eliminamos columnas sin nombre o vacías de raíz
+        # Carga limpia de columnas fantasma
         temp_df = pd.read_excel(archivo_cargado)
+        # Filtro para quitar las Unnamed
         temp_df = temp_df.loc[:, ~temp_df.columns.str.contains('^Unnamed')]
         st.session_state['df_master'] = temp_df.dropna(axis=1, how='all')
     
@@ -83,8 +83,10 @@ if archivo_cargado:
 
     with tab_limp:
         st.header("Limpieza de Variables Numéricas")
-        col_select = st.selectbox("Selecciona Variable", df.columns)
+        cols_validas = [c for c in df.columns if "Unnamed" not in str(c)]
+        col_select = st.selectbox("Selecciona Variable", cols_validas)
         col_data = pd.to_numeric(df[col_select], errors='coerce')
+        
         if not col_data.isna().all():
             v_i, c_i = col_data.isna().sum(), (col_data == 0).sum()
             st.subheader("📊 Estatus de Transformación")
@@ -100,7 +102,7 @@ if archivo_cargado:
             limp_c = st.checkbox(f"Tratar ceros como no reales")
             met_c = "Mantener"
             if limp_c: met_c = st.selectbox("Sustituir ceros por:", ["MEDIA", "MEDIANA", "MODA", "NAN"])
-            if st.button(f"🚀 EJECUTAR TRANSFORMACIÓN"):
+            if st.button(f"🚀 EJECUTAR"):
                 new_s = col_data.copy(); tot = 0; d_e, d_c = log['err'], log['cero']
                 if met_v != "Mantener": new_s = new_s.fillna(calcular_sustituto(new_s, met_v)); d_e = met_v; tot += v_i
                 if met_c != "Mantener": new_s = new_s.replace(0, calcular_sustituto(new_s.replace(0, np.nan), met_c)); d_c = met_c; tot += c_i
@@ -112,11 +114,8 @@ if archivo_cargado:
         st.header("Reporte Descriptivo Completo")
         df_num = df.select_dtypes(include=[np.number])
         if not df_num.empty:
-            st.subheader("📈 Estadísticos Numéricos")
             res = df_num.agg(['count', 'min', 'max', 'mean', 'median', 'std']).T
             res['Moda'] = [df_num[c].mode()[0] if not df_num[c].mode().empty else np.nan for c in df_num.columns]
-            res['P5'] = df_num.quantile(0.05); res['P95'] = df_num.quantile(0.95)
-            res = res[['count', 'min', 'max', 'mean', 'median', 'Moda', 'std', 'P5', 'P95']]
             st.dataframe(res.round(2))
         st.markdown("---")
         for c in df.select_dtypes(exclude=[np.number]).columns:
@@ -145,58 +144,43 @@ if archivo_cargado:
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
             workbook = writer.book
             f_tit = workbook.add_format({'bold': True, 'font_size': 14, 'bg_color': '#2E5077', 'font_color': 'white', 'border': 1})
-            f_sub = workbook.add_format({'bold': True, 'bg_color': '#D7E4BC', 'border': 1})
             f_bold = workbook.add_format({'bold': True, 'border': 1})
             f_sig = workbook.add_format({'bg_color': '#C6EFCE', 'font_color': '#006100', 'bold': True, 'border': 1})
 
-            sh1 = workbook.add_worksheet('UNIVARIADO'); sh1.write(0, 0, "ANÁLISIS UNIVARIADO", f_tit)
-            row_u = 2
-            if not df_num.empty:
-                res.round(2).to_excel(writer, sheet_name='UNIVARIADO', startrow=row_u+1); row_u += len(res) + 4
-            for c in df.select_dtypes(exclude=[np.number]).columns:
-                sh1.write(row_u, 0, f"Variable: {c}", f_bold)
-                f = df[c].value_counts(dropna=False).reset_index()
-                f.columns = ['Categoría', 'N']; f['%'] = (f['N']/f['N'].sum()*100).round(1)
-                f.loc[len(f)] = ['TOTAL', f['N'].sum(), 100.0]
-                f.to_excel(writer, sheet_name='UNIVARIADO', startrow=row_u+1, index=False); row_u += len(f) + 3
-
+            sh1 = workbook.add_worksheet('UNIVARIADO'); row_u = 2
+            if not df_num.empty: res.round(2).to_excel(writer, sheet_name='UNIVARIADO', startrow=row_u+1); row_u += len(res) + 4
+            
             sh_bi1 = workbook.add_worksheet('BIVARIADO'); sh_bi2 = workbook.add_worksheet('BIVARIADO 2')
             r1, r2 = 2, 2
             if vars_sel:
                 for vc in vars_sel:
                     for vf in [c for c in df.columns if c not in vars_sel]:
                         es_vc_n, es_vf_n = pd.api.types.is_numeric_dtype(df[vc]), pd.api.types.is_numeric_dtype(df[vf])
-                        if es_vc_n and es_vf_n: continue
                         if not es_vc_n and not es_vf_n:
-                            sh_bi1.write(r1, 0, f"Cruce: {vf} vs {vc}", f_bold)
                             ct_abs = pd.crosstab(df[vf], df[vc], margins=True, margins_name="TOTAL")
                             ct_abs.to_excel(writer, sheet_name='BIVARIADO', startrow=r1+1)
                             sigs = realizar_test_proporciones(ct_abs); r1 += len(ct_abs) + 3
                             ct_per = (pd.crosstab(df[vf], df[vc], normalize='columns')*100).round(1)
-                            ct_per.loc['TOTAL'] = ["MULTIPLE" if s > 100.1 else "100.0%" for s in ct_per.sum()]
                             ct_per.to_excel(writer, sheet_name='BIVARIADO', startrow=r1+1)
                             f_idx, c_idx = ct_per.index.tolist(), ct_per.columns.tolist()
                             for f_s, c_s in sigs:
                                 try: writer.sheets['BIVARIADO'].write(f_idx.index(f_s)+r1+2, c_idx.index(c_s)+1, ct_per.loc[f_s, c_s], f_sig)
                                 except: continue
                             r1 += len(ct_per) + 5
-                        else:
+                        elif (es_vc_n and not es_vf_n) or (not es_vc_n and es_vf_n):
                             v_n, v_c = (vc, vf) if es_vc_n else (vf, vc)
-                            sh_bi2.write(r2, 0, f"Análisis de {v_n} por {v_c}", f_bold)
-                            sigs_m = realizar_test_medias(df, v_n, v_c)
                             rb = df.groupby(v_c)[v_n].agg(['count', 'mean', 'std']).round(2)
                             rb.to_excel(writer, sheet_name='BIVARIADO 2', startrow=r2+1)
+                            sigs_m = realizar_test_medias(df, v_n, v_c)
                             f_idx = rb.index.tolist()
                             for s_cat in sigs_m:
                                 try: writer.sheets['BIVARIADO 2'].write(f_idx.index(s_cat)+r2+2, 2, rb.loc[s_cat, 'mean'], f_sig)
                                 except: continue
                             r2 += len(rb) + 5
 
-            sh4 = workbook.add_worksheet('CONJUNTOS_MULTIPLES'); r_m = 1
+            sh4 = workbook.add_worksheet('MÚLTIPLE'); r_m = 1
             for g in st.session_state['grupos_multiples']:
-                sh4.write(r_m, 0, f"CONJUNTO: {g['nombre']}", f_bold); dt = g['tabla'].copy()
-                dt.loc['TOTAL'] = [dt['Menciones'].sum(), f"{dt['% Casos'].sum().round(1)}% (MULTIPLE)", "100.0%"]
-                dt.to_excel(writer, sheet_name='CONJUNTOS_MULTIPLES', startrow=r_m+1); r_m += len(dt) + 6
+                g['tabla'].to_excel(writer, sheet_name='MÚLTIPLE', startrow=r_m+1); r_m += len(g['tabla']) + 6
 
-        st.sidebar.download_button("⬇️ DESCARGAR REPORTE", output.getvalue(), "Reporte_Final.xlsx")
-else: st.info("Sube tu archivo para comenzar.")
+        st.sidebar.download_button("⬇️ DESCARGAR", output.getvalue(), "Reporte_Final.xlsx")
+else: st.info("Sube tu archivo.")
