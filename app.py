@@ -33,76 +33,70 @@ if archivo_cargado:
     if st.session_state['df_master'] is None:
         st.session_state['df_master'] = pd.read_excel(archivo_cargado)
     
-    # Trabajamos siempre sobre la versión en memoria
+    # Trabajamos sobre la base en memoria
     df = st.session_state['df_master']
     st.title("🌟 Procesador Estadístico Profesional")
     
     tab_limp, tab_univ, tab_biv, tab_mult = st.tabs(["🛠️ Limpieza", "📉 Univariado", "📊 Bivariado", "🔢 R. Múltiple"])
 
-    # --- 1. TAB LIMPIEZA (VERSION DEFINITIVA) ---
+    # --- 1. TAB LIMPIEZA (VERSION CORRECTA) ---
     with tab_limp:
         st.header("Limpieza de Variables Numéricas")
         col_select = st.selectbox("Selecciona Variable para Revisar", df.columns)
         
-        # 1. Intentamos convertir a número siempre
-        serie_orig = df[col_select]
-        serie_num = pd.to_numeric(serie_orig, errors='coerce')
+        # Procesamiento de la columna seleccionada
+        # Primero, intentamos la conversión numérica forzada
+        col_data = pd.to_numeric(df[col_select], errors='coerce')
         
-        es_num = not serie_num.isna().all()
-
-        if es_num:
-            # Si detectamos que la columna original tiene textos pero es numérica, 
-            # actualizamos la memoria para que ya sea float64 (como en Colab)
-            if not np.issubdtype(df[col_select].dtype, np.number):
-                st.session_state['df_master'][col_select] = serie_num
-                st.rerun()
-
-            # Conteos reales
-            vacios = serie_num.isna().sum()
-            ceros = (serie_num == 0).sum()
+        # Verificamos si realmente es numérica (tiene al menos un número)
+        if not col_data.isna().all():
+            
+            # Detectamos ceros y vacíos sobre los datos numéricos
+            cant_vacios = col_data.isna().sum()
+            cant_ceros = (col_data == 0).sum()
 
             c1, c2 = st.columns(2)
-            c1.metric("Errores de texto (vacías o no números)", vacios)
-            c2.metric("Valores en Cero", ceros)
+            c1.metric("Errores de texto / Vacíos", cant_vacios)
+            c2.metric("Valores en Cero", cant_ceros)
 
             st.markdown("---")
             st.subheader("Configuración de Limpieza Integral")
 
-            # Pregunta por Errores
+            # Paso 1: Gestión de Errores/Vacíos
             metodo_v = "Mantener"
-            if vacios > 0:
-                metodo_v = st.selectbox(f"¿Cómo sustituir los {vacios} errores/vacíos?", 
-                                      ["Mantener", "NAN", "0", "MEDIA", "MEDIANA", "MODA"])
+            if cant_vacios > 0:
+                metodo_v = st.selectbox(f"Sustituir los {cant_vacios} vacíos por:", 
+                                      ["Mantener", "MEDIA", "MEDIANA", "MODA", "0", "NAN"])
             
-            # Pregunta por Ceros
+            # Paso 2: Gestión de Ceros
             metodo_c = "Mantener"
-            if ceros > 0:
-                limpiar_c = st.checkbox(f"Sustituir los {ceros} valores en cero (no son reales)")
+            if cant_ceros > 0:
+                limpiar_c = st.checkbox(f"Sustituir los {cant_ceros} valores cero (no son reales)")
                 if limpiar_c:
-                    metodo_c = st.selectbox("Sustituir ceros por:", ["NAN", "MEDIA", "MEDIANA", "MODA"])
+                    metodo_c = st.selectbox("Sustituir ceros por:", ["MEDIA", "MEDIANA", "MODA", "NAN"])
 
             st.markdown("---")
-            if st.button(f"🚀 EJECUTAR LIMPIEZA DE {col_select}"):
-                temp_df = st.session_state['df_master'].copy()
-                col_data = temp_df[col_select]
+            if st.button(f"🚀 EJECUTAR LIMPIEZA EN {col_select}"):
+                # Creamos una copia fresca
+                new_serie = col_data.copy()
 
-                # Acción 1: Limpiar Vacíos
-                if metodo_v != "Mantener":
-                    val_v = calcular_sustituto(col_data, metodo_v)
-                    col_data = col_data.fillna(val_v)
+                # Aplicamos limpieza de vacíos si no es NAN (porque ya lo son)
+                if metodo_v not in ["Mantener", "NAN"]:
+                    val_v = calcular_sustituto(new_serie, metodo_v)
+                    new_serie = new_serie.fillna(val_v)
                 
-                # Acción 2: Limpiar Ceros
+                # Aplicamos limpieza de ceros
                 if metodo_c != "Mantener":
-                    # Para promedios, ignoramos los ceros actuales
-                    base_calculo = col_data.replace(0, np.nan)
-                    val_c = calcular_sustituto(base_calculo, metodo_c)
-                    col_data = col_data.replace(0, val_c)
+                    base_calc = new_serie.replace(0, np.nan)
+                    val_c = calcular_sustituto(base_calc, metodo_c)
+                    new_serie = new_serie.replace(0, val_c)
 
-                st.session_state['df_master'][col_select] = col_data
-                st.success(f"¡Variable {col_select} procesada!")
-                st.rerun()
+                # GUARDADO CRÍTICO EN EL DF MASTER
+                st.session_state['df_master'][col_select] = new_serie
+                st.success(f"¡Variable {col_select} actualizada!")
+                st.rerun() # Esto obliga a la app a recalcular los contadores
         else:
-            st.warning("Variable detectada como TEXTUAL.")
+            st.warning("Esta variable es puramente TEXTUAL.")
 
     # --- 2. TAB UNIVARIADO ---
     with tab_univ:
@@ -117,7 +111,7 @@ if archivo_cargado:
     # --- 3. TAB BIVARIADO ---
     with tab_biv:
         st.header("Configuración de Cruces")
-        vars_seleccionadas = st.multiselect("Variables de Cruce (Columnas)", df.columns)
+        vars_seleccionadas = st.multiselect("Variables para COLUMNAS del Excel", df.columns)
 
     # --- 4. TAB RESPUESTA MÚLTIPLE ---
     with tab_mult:
