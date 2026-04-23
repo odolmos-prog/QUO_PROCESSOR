@@ -24,6 +24,7 @@ if 'df_master' not in st.session_state:
     st.session_state['df_master'] = None
 if 'grupos_multiples' not in st.session_state:
     st.session_state['grupos_multiples'] = []
+# Registro de limpieza más detallado
 if 'limpieza_log' not in st.session_state:
     st.session_state['limpieza_log'] = {}
 
@@ -40,7 +41,7 @@ if archivo_cargado:
     
     tab_limp, tab_univ, tab_biv, tab_mult = st.tabs(["🛠️ Limpieza", "📉 Univariado", "📊 Bivariado", "🔢 R. Múltiple"])
 
-    # --- 1. TAB LIMPIEZA CON MONITORES PULIDOS ---
+    # --- 1. TAB LIMPIEZA CON MONITORES DUALES ---
     with tab_limp:
         st.header("Limpieza de Variables Numéricas")
         col_select = st.selectbox("Selecciona Variable", df.columns)
@@ -50,14 +51,15 @@ if archivo_cargado:
             vacios_ini = col_data.isna().sum()
             ceros_ini = (col_data == 0).sum()
 
-            st.subheader("📊 Monitores de Estatus")
-            m1, m2, m3, m4 = st.columns(4)
-            m1.metric("Errores/Vacíos Iniciales", vacios_ini)
-            m2.metric("Valores CERO Iniciales", ceros_ini)
+            st.subheader("📊 Estatus de Transformación")
+            m1, m2, m3 = st.columns([1, 1, 2])
+            m1.metric("Errores/Vacíos", vacios_ini)
+            m2.metric("Valores CERO", ceros_ini)
             
-            log = st.session_state['limpieza_log'].get(col_select, {"metodo": "Ninguna", "cant": 0})
-            m3.metric("Última Decisión", log['metodo'])
-            m4.metric("Registros Procesados", log['cant'])
+            # Monitor Dual de Decisiones
+            log = st.session_state['limpieza_log'].get(col_select, {"err": "Ninguna", "cero": "Ninguna", "total": 0})
+            resumen_decisiones = f"Err: {log['err']} | Ceros: {log['cero']}"
+            m3.metric("Decisiones Tomadas", resumen_decisiones, f"{log['total']} reg. procesados")
 
             st.markdown("---")
             metodo_v = st.selectbox(f"Tratar errores/vacíos por:", ["Mantener", "MEDIA", "MEDIANA", "MODA", "0", "NAN"])
@@ -68,32 +70,44 @@ if archivo_cargado:
 
             if st.button(f"🚀 EJECUTAR TRANSFORMACIÓN"):
                 new_serie = col_data.copy()
-                procesados = 0
+                total_cambios = 0
+                
+                # Proceso de Errores
+                dec_err = log['err']
                 if metodo_v != "Mantener":
                     val_v = calcular_sustituto(new_serie, metodo_v)
-                    procesados += vacios_ini
                     new_serie = new_serie.fillna(val_v)
+                    dec_err = metodo_v
+                    total_cambios += vacios_ini
+                
+                # Proceso de Ceros
+                dec_cero = log['cero']
                 if metodo_c != "Mantener":
-                    procesados += ceros_ini
-                    new_serie = new_serie.replace(0, calcular_sustituto(new_serie.replace(0, np.nan), metodo_c))
+                    val_c = calcular_sustituto(new_serie.replace(0, np.nan), metodo_c)
+                    new_serie = new_serie.replace(0, val_c)
+                    dec_cero = metodo_c
+                    total_cambios += ceros_ini
 
                 st.session_state['df_master'][col_select] = new_serie
-                st.session_state['limpieza_log'][col_select] = {"metodo": metodo_v if metodo_v != "Mantener" else metodo_c, "cant": procesados}
+                st.session_state['limpieza_log'][col_select] = {
+                    "err": dec_err, 
+                    "cero": dec_cero, 
+                    "total": total_cambios
+                }
+                st.success("¡Transformación aplicada!")
                 st.rerun()
         else: st.warning("Variable Textual")
 
-    # --- 2. TAB UNIVARIADO (CON MODA Y TABLA RESUMEN) ---
+    # --- 2. TAB UNIVARIADO (CON MODA) ---
     with tab_univ:
         st.header("Reporte Descriptivo Completo")
         df_num = df.select_dtypes(include=[np.number])
         if not df_num.empty:
             st.subheader("📈 Estadísticos de Variables Numéricas")
-            # Calculamos moda por separado porque agg no siempre la maneja bien
             resumen = df_num.agg(['count', 'min', 'max', 'mean', 'median', 'std']).T
             resumen['Moda'] = [df_num[c].mode()[0] if not df_num[c].mode().empty else np.nan for c in df_num.columns]
             resumen['P5'] = df_num.quantile(0.05)
             resumen['P95'] = df_num.quantile(0.95)
-            # Reordenar para que la moda esté cerca de la media
             resumen = resumen[['count', 'min', 'max', 'mean', 'median', 'Moda', 'std', 'P5', 'P95']]
             st.dataframe(resumen.round(2))
         
@@ -102,8 +116,7 @@ if archivo_cargado:
         for c in df.select_dtypes(exclude=[np.number]).columns:
             with st.expander(f"Variable: {c}"):
                 f = df[c].value_counts(dropna=False).reset_index()
-                f.columns = ['Categoría', 'N']
-                f['%'] = (f['N']/f['N'].sum()*100).round(1)
+                f.columns = ['Categoría', 'N']; f['%'] = (f['N']/f['N'].sum()*100).round(1)
                 st.table(f)
 
     # --- 3. TAB BIVARIADO ---
@@ -124,26 +137,21 @@ if archivo_cargado:
                 st.rerun()
         for g in st.session_state['grupos_multiples']: st.write(f"✔️ **{g['nombre']}**")
 
-    # --- EXPORTACIÓN (REPORTES COMPLETOS) ---
+    # --- EXPORTACIÓN ---
     st.sidebar.markdown("---")
     if st.sidebar.button("🚀 GENERAR EXCEL FINAL"):
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
             workbook = writer.book
             f_tit = workbook.add_format({'bold': True, 'bg_color': '#2E5077', 'font_color': 'white', 'border': 1})
-            f_sub = workbook.add_format({'bold': True, 'bg_color': '#D7E4BC', 'border': 1})
             f_bold = workbook.add_format({'bold': True})
 
             # UNIVARIADO
             sh1 = workbook.add_worksheet('UNIVARIADO')
-            sh1.write(0, 0, "ANÁLISIS UNIVARIADO", f_tit)
-            if not df_num.empty:
-                resumen.round(2).to_excel(writer, sheet_name='UNIVARIADO', startrow=2)
+            if not df_num.empty: resumen.round(2).to_excel(writer, sheet_name='UNIVARIADO', startrow=2)
             
-            # BIVARIADOS (Lógica dual)
-            sh_bi1 = workbook.add_worksheet('BIVARIADO')
-            sh_bi2 = workbook.add_worksheet('BIVARIADO 2')
-            r1, r2 = 2, 2
+            # BIVARIADOS
+            sh_bi1 = workbook.add_worksheet('BIVARIADO'); sh_bi2 = workbook.add_worksheet('BIVARIADO 2'); r1, r2 = 2, 2
             if vars_seleccionadas:
                 for vc in vars_seleccionadas:
                     for vf in [c for c in df.columns if c not in vars_seleccionadas]:
@@ -166,6 +174,5 @@ if archivo_cargado:
                 dt.loc['TOTAL'] = [dt['Menciones'].sum(), f"{dt['% Casos'].sum().round(1)}% (MULTIPLE)", "100.0%"]
                 dt.to_excel(writer, sheet_name='CONJUNTOS_MULTIPLES', startrow=r_m+1); r_m += len(dt) + 6
 
-        st.sidebar.download_button("⬇️ DESCARGAR REPORTE", output.getvalue(), "Analisis_Estadistico_Final.xlsx")
-    st.sidebar.caption("⚠️ Oprimir solo tras limpiar y configurar todo.")
+        st.sidebar.download_button("⬇️ DESCARGAR REPORTE", output.getvalue(), "Analisis_Final.xlsx")
 else: st.info("Sube tu archivo para comenzar.")
