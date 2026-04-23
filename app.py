@@ -24,7 +24,6 @@ if 'df_master' not in st.session_state:
     st.session_state['df_master'] = None
 if 'grupos_multiples' not in st.session_state:
     st.session_state['grupos_multiples'] = []
-# Registro de limpieza más detallado
 if 'limpieza_log' not in st.session_state:
     st.session_state['limpieza_log'] = {}
 
@@ -41,7 +40,7 @@ if archivo_cargado:
     
     tab_limp, tab_univ, tab_biv, tab_mult = st.tabs(["🛠️ Limpieza", "📉 Univariado", "📊 Bivariado", "🔢 R. Múltiple"])
 
-    # --- 1. TAB LIMPIEZA CON MONITORES DUALES ---
+    # --- 1. TAB LIMPIEZA CON MONITORES DUALES Y LETRA PEQUEÑA ---
     with tab_limp:
         st.header("Limpieza de Variables Numéricas")
         col_select = st.selectbox("Selecciona Variable", df.columns)
@@ -56,10 +55,15 @@ if archivo_cargado:
             m1.metric("Errores/Vacíos", vacios_ini)
             m2.metric("Valores CERO", ceros_ini)
             
-            # Monitor Dual de Decisiones
+            # Monitor con letra más pequeña para que quepa todo
             log = st.session_state['limpieza_log'].get(col_select, {"err": "Ninguna", "cero": "Ninguna", "total": 0})
             resumen_decisiones = f"Err: {log['err']} | Ceros: {log['cero']}"
-            m3.metric("Decisiones Tomadas", resumen_decisiones, f"{log['total']} reg. procesados")
+            
+            with m3:
+                st.write("**Decisiones Tomadas**")
+                # Usamos HTML para controlar el tamaño de la letra exacto
+                st.markdown(f"<h3 style='font-size: 20px; color: #2E5077; margin-top: -10px;'>{resumen_decisiones}</h3>", unsafe_allow_html=True)
+                st.caption(f"✅ {log['total']} reg. procesados")
 
             st.markdown("---")
             metodo_v = st.selectbox(f"Tratar errores/vacíos por:", ["Mantener", "MEDIA", "MEDIANA", "MODA", "0", "NAN"])
@@ -98,7 +102,7 @@ if archivo_cargado:
                 st.rerun()
         else: st.warning("Variable Textual")
 
-    # --- 2. TAB UNIVARIADO (CON MODA) ---
+    # --- 2. TAB UNIVARIADO ---
     with tab_univ:
         st.header("Reporte Descriptivo Completo")
         df_num = df.select_dtypes(include=[np.number])
@@ -145,12 +149,8 @@ if archivo_cargado:
             workbook = writer.book
             f_tit = workbook.add_format({'bold': True, 'bg_color': '#2E5077', 'font_color': 'white', 'border': 1})
             f_bold = workbook.add_format({'bold': True})
-
-            # UNIVARIADO
             sh1 = workbook.add_worksheet('UNIVARIADO')
             if not df_num.empty: resumen.round(2).to_excel(writer, sheet_name='UNIVARIADO', startrow=2)
-            
-            # BIVARIADOS
             sh_bi1 = workbook.add_worksheet('BIVARIADO'); sh_bi2 = workbook.add_worksheet('BIVARIADO 2'); r1, r2 = 2, 2
             if vars_seleccionadas:
                 for vc in vars_seleccionadas:
@@ -164,15 +164,13 @@ if archivo_cargado:
                             sh_bi1.write(r1, 0, f"Cruce: {vf} vs {vc}", f_bold); ct = (pd.crosstab(df[vf], df[vc], normalize='columns')*100).round(1)
                             ct.loc['TOTAL'] = ["MULTIPLE" if s > 100.1 else "100.0%" for s in ct.sum()]
                             ct.to_excel(writer, sheet_name='BIVARIADO', startrow=r1+1); r1 += len(ct) + 4
-
-            # CONJUNTOS_MULTIPLES
-            sh4 = workbook.add_worksheet('CONJUNTOS_MULTIPLES')
-            r_m = 1
+            sh4 = workbook.add_worksheet('CONJUNTOS_MULTIPLES'); r_m = 1
             for g in st.session_state['grupos_multiples']:
                 sh4.write(r_m, 0, f"CONJUNTO: {g['nombre']}", f_bold)
                 dt = g['tabla'].copy()
                 dt.loc['TOTAL'] = [dt['Menciones'].sum(), f"{dt['% Casos'].sum().round(1)}% (MULTIPLE)", "100.0%"]
                 dt.to_excel(writer, sheet_name='CONJUNTOS_MULTIPLES', startrow=r_m+1); r_m += len(dt) + 6
 
-        st.sidebar.download_button("⬇️ DESCARGAR REPORTE", output.getvalue(), "Analisis_Final.xlsx")
+        st.sidebar.download_button("⬇️ DESCARGAR", output.getvalue(), "Analisis_Final.xlsx")
+    st.sidebar.caption("⚠️ Oprimir solo tras limpiar y configurar todo.")
 else: st.info("Sube tu archivo para comenzar.")
