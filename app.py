@@ -24,7 +24,6 @@ if 'df_master' not in st.session_state:
     st.session_state['df_master'] = None
 if 'grupos_multiples' not in st.session_state:
     st.session_state['grupos_multiples'] = []
-# Diccionario para rastrear decisiones de limpieza
 if 'limpieza_log' not in st.session_state:
     st.session_state['limpieza_log'] = {}
 
@@ -41,37 +40,28 @@ if archivo_cargado:
     
     tab_limp, tab_univ, tab_biv, tab_mult = st.tabs(["🛠️ Limpieza", "📉 Univariado", "📊 Bivariado", "🔢 R. Múltiple"])
 
-    # --- 1. TAB LIMPIEZA CON MONITORES DE DECISIÓN ---
+    # --- 1. TAB LIMPIEZA CON MONITORES PULIDOS ---
     with tab_limp:
         st.header("Limpieza de Variables Numéricas")
         col_select = st.selectbox("Selecciona Variable", df.columns)
-        
-        # Forzado de conversión para análisis
         col_data = pd.to_numeric(df[col_select], errors='coerce')
         
         if not col_data.isna().all():
-            vacios_pendientes = col_data.isna().sum()
-            ceros_pendientes = (col_data == 0).sum()
+            vacios_ini = col_data.isna().sum()
+            ceros_ini = (col_data == 0).sum()
 
-            # Mostramos los monitores solicitados
             st.subheader("📊 Monitores de Estatus")
             m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Errores/Vacíos Iniciales", vacios_ini)
+            m2.metric("Valores CERO Iniciales", ceros_ini)
             
-            m1.metric("Errores/Vacíos PENDIENTES", vacios_pendientes, delta_color="inverse")
-            m2.metric("Valores CERO PENDIENTES", ceros_pendientes)
-            
-            # Recuperamos decisiones previas de este log
             log = st.session_state['limpieza_log'].get(col_select, {"metodo": "Ninguna", "cant": 0})
             m3.metric("Última Decisión", log['metodo'])
             m4.metric("Registros Procesados", log['cant'])
 
             st.markdown("---")
-            st.subheader("Configuración de Limpieza")
-
-            metodo_v = st.selectbox(f"Tratar {vacios_pendientes} errores por:", 
-                                  ["Mantener", "MEDIA", "MEDIANA", "MODA", "0", "NAN"])
-            
-            limpiar_c = st.checkbox(f"Tratar {ceros_pendientes} ceros como no reales")
+            metodo_v = st.selectbox(f"Tratar errores/vacíos por:", ["Mantener", "MEDIA", "MEDIANA", "MODA", "0", "NAN"])
+            limpiar_c = st.checkbox(f"Tratar ceros como no reales")
             metodo_c = "Mantener"
             if limpiar_c:
                 metodo_c = st.selectbox("Sustituir ceros por:", ["MEDIA", "MEDIANA", "MODA", "NAN"])
@@ -79,44 +69,37 @@ if archivo_cargado:
             if st.button(f"🚀 EJECUTAR TRANSFORMACIÓN"):
                 new_serie = col_data.copy()
                 procesados = 0
-
                 if metodo_v != "Mantener":
                     val_v = calcular_sustituto(new_serie, metodo_v)
-                    procesados += vacios_pendientes
+                    procesados += vacios_ini
                     new_serie = new_serie.fillna(val_v)
-                
                 if metodo_c != "Mantener":
-                    procesados += ceros_pendientes
-                    base_calc = new_serie.replace(0, np.nan)
-                    val_c = calcular_sustituto(base_calc, metodo_c)
-                    new_serie = new_serie.replace(0, val_c)
+                    procesados += ceros_ini
+                    new_serie = new_serie.replace(0, calcular_sustituto(new_serie.replace(0, np.nan), metodo_c))
 
-                # Guardamos el cambio y el log
                 st.session_state['df_master'][col_select] = new_serie
                 st.session_state['limpieza_log'][col_select] = {"metodo": metodo_v if metodo_v != "Mantener" else metodo_c, "cant": procesados}
-                st.success("¡Transformación aplicada con éxito!")
                 st.rerun()
-        else:
-            st.warning("Variable Textual")
+        else: st.warning("Variable Textual")
 
-    # --- 2. TAB UNIVARIADO (CORREGIDO PARA ESTADÍSTICOS) ---
+    # --- 2. TAB UNIVARIADO (CON MODA Y TABLA RESUMEN) ---
     with tab_univ:
         st.header("Reporte Descriptivo Completo")
-        
-        # Parte A: Cuantitativas (Tus estadísticos de Colab)
         df_num = df.select_dtypes(include=[np.number])
         if not df_num.empty:
             st.subheader("📈 Estadísticos de Variables Numéricas")
+            # Calculamos moda por separado porque agg no siempre la maneja bien
             resumen = df_num.agg(['count', 'min', 'max', 'mean', 'median', 'std']).T
+            resumen['Moda'] = [df_num[c].mode()[0] if not df_num[c].mode().empty else np.nan for c in df_num.columns]
             resumen['P5'] = df_num.quantile(0.05)
             resumen['P95'] = df_num.quantile(0.95)
+            # Reordenar para que la moda esté cerca de la media
+            resumen = resumen[['count', 'min', 'max', 'mean', 'median', 'Moda', 'std', 'P5', 'P95']]
             st.dataframe(resumen.round(2))
         
-        # Parte B: Cualitativas
         st.markdown("---")
         st.subheader("📊 Tablas de Frecuencia (Cualitativas)")
-        cols_text = df.select_dtypes(exclude=[np.number]).columns
-        for c in cols_text:
+        for c in df.select_dtypes(exclude=[np.number]).columns:
             with st.expander(f"Variable: {c}"):
                 f = df[c].value_counts(dropna=False).reset_index()
                 f.columns = ['Categoría', 'N']
@@ -139,15 +122,50 @@ if archivo_cargado:
                 t = pd.DataFrame({'Menciones': m, '% Casos': (m/n_p*100).round(1), '% Resp': (m/m.sum()*100).round(1)}).sort_values('Menciones', ascending=False)
                 st.session_state['grupos_multiples'].append({'nombre': nom, 'tabla': t, 'n_personas': n_p, 'columnas': cols})
                 st.rerun()
+        for g in st.session_state['grupos_multiples']: st.write(f"✔️ **{g['nombre']}**")
 
-    # --- EXPORTACIÓN ---
+    # --- EXPORTACIÓN (REPORTES COMPLETOS) ---
     st.sidebar.markdown("---")
     if st.sidebar.button("🚀 GENERAR EXCEL FINAL"):
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            # (Aquí mantenemos la lógica de tus 4 pestañas que ya funciona perfecto)
-            df.to_excel(writer, sheet_name='DATOS_LIMPIOS')
-            # ... resto de la lógica de bivariados y múltiples ...
-        st.sidebar.download_button("⬇️ DESCARGAR", output.getvalue(), "Reporte_Final.xlsx")
-else:
-    st.info("Sube tu archivo para comenzar.")
+            workbook = writer.book
+            f_tit = workbook.add_format({'bold': True, 'bg_color': '#2E5077', 'font_color': 'white', 'border': 1})
+            f_sub = workbook.add_format({'bold': True, 'bg_color': '#D7E4BC', 'border': 1})
+            f_bold = workbook.add_format({'bold': True})
+
+            # UNIVARIADO
+            sh1 = workbook.add_worksheet('UNIVARIADO')
+            sh1.write(0, 0, "ANÁLISIS UNIVARIADO", f_tit)
+            if not df_num.empty:
+                resumen.round(2).to_excel(writer, sheet_name='UNIVARIADO', startrow=2)
+            
+            # BIVARIADOS (Lógica dual)
+            sh_bi1 = workbook.add_worksheet('BIVARIADO')
+            sh_bi2 = workbook.add_worksheet('BIVARIADO 2')
+            r1, r2 = 2, 2
+            if vars_seleccionadas:
+                for vc in vars_seleccionadas:
+                    for vf in [c for c in df.columns if c not in vars_seleccionadas]:
+                        if pd.api.types.is_numeric_dtype(df[vc]) and pd.api.types.is_numeric_dtype(df[vf]): continue
+                        if pd.api.types.is_numeric_dtype(df[vc]) or pd.api.types.is_numeric_dtype(df[vf]):
+                            v_n, v_c = (vc, vf) if pd.api.types.is_numeric_dtype(df[vc]) else (vf, vc)
+                            res = df.groupby(v_c)[v_n].agg(['count', 'mean', 'std']).round(2)
+                            sh_bi2.write(r2, 0, f"Análisis: {v_n} por {v_c}", f_bold); res.to_excel(writer, sheet_name='BIVARIADO 2', startrow=r2+1); r2 += len(res) + 4
+                        else:
+                            sh_bi1.write(r1, 0, f"Cruce: {vf} vs {vc}", f_bold); ct = (pd.crosstab(df[vf], df[vc], normalize='columns')*100).round(1)
+                            ct.loc['TOTAL'] = ["MULTIPLE" if s > 100.1 else "100.0%" for s in ct.sum()]
+                            ct.to_excel(writer, sheet_name='BIVARIADO', startrow=r1+1); r1 += len(ct) + 4
+
+            # CONJUNTOS_MULTIPLES
+            sh4 = workbook.add_worksheet('CONJUNTOS_MULTIPLES')
+            r_m = 1
+            for g in st.session_state['grupos_multiples']:
+                sh4.write(r_m, 0, f"CONJUNTO: {g['nombre']}", f_bold)
+                dt = g['tabla'].copy()
+                dt.loc['TOTAL'] = [dt['Menciones'].sum(), f"{dt['% Casos'].sum().round(1)}% (MULTIPLE)", "100.0%"]
+                dt.to_excel(writer, sheet_name='CONJUNTOS_MULTIPLES', startrow=r_m+1); r_m += len(dt) + 6
+
+        st.sidebar.download_button("⬇️ DESCARGAR REPORTE", output.getvalue(), "Analisis_Estadistico_Final.xlsx")
+    st.sidebar.caption("⚠️ Oprimir solo tras limpiar y configurar todo.")
+else: st.info("Sube tu archivo para comenzar.")
