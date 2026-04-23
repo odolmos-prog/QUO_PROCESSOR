@@ -5,7 +5,7 @@ from scipy import stats
 import io
 
 # --- CONFIGURACIÓN ---
-st.set_page_config(page_title="QUO PROCESSOR Powered by Elisa", layout="wide")
+st.set_page_config(page_title="QUO Processor Powered by Elisa", layout="wide")
 
 # --- FUNCIONES MOTORAS ---
 def calcular_sustituto(serie, metodo):
@@ -34,72 +34,88 @@ if archivo_cargado:
         st.session_state['df_master'] = pd.read_excel(archivo_cargado)
     
     df = st.session_state['df_master']
-    st.title("🌟 QUO PROCESSOR Powered by Elisa")
+    st.title("🌟 QUO Processor Powered by Elisa")
     
     tab_limp, tab_univ, tab_biv, tab_mult = st.tabs(["🛠️ Limpieza", "📉 Univariado", "📊 Bivariado", "🔢 R. Múltiple"])
 
-    # --- 1. TAB LIMPIEZA (MOTOR MEJORADO) ---
+    # --- 1. TAB LIMPIEZA (FLUJO SECUENCIAL MEJORADO) ---
     with tab_limp:
-        st.header("Limpieza de Variables")
+        st.header("Limpieza de Variables Numéricas")
         col_select = st.selectbox("Selecciona Variable para Revisar", df.columns)
         
         # FORZAMOS LA CONVERSIÓN para detectar errores (como en Colab)
         serie_orig = df[col_select]
         serie_num = pd.to_numeric(serie_orig, errors='coerce')
         
-        # Determinamos si es numérica o textual basándonos en si pudimos convertir datos
+        # Determinamos si es numérica
         es_realmente_num = not serie_num.isna().all()
 
         if es_realmente_num:
             st.success(f"Variable '{col_select}' tratada como NUMÉRICA")
             
-            # Detectar Errores de Texto (Caracteres extraños)
-            mask_texto = serie_num.isna() & serie_orig.notna()
-            cant_texto = mask_texto.sum()
+            # Detectar Errores (Vacías o no números)
+            mask_errores = serie_num.isna()
+            cant_errores = mask_errores.sum()
             
             # Detectar Ceros
             cant_ceros = (serie_num == 0).sum()
-            
-            # Detectar Vacíos Reales
-            cant_vacios = serie_orig.isna().sum()
 
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("Errores de texto", cant_texto)
-            with col2:
-                st.metric("Valores en Cero", cant_ceros)
-            with col3:
-                st.metric("Celdas Vacías", cant_vacios)
+            c1, c2 = st.columns(2)
+            # PETICIÓN 1: Cambio de etiqueta
+            c1.metric("Errores de texto (vacías o no números)", cant_errores)
+            c2.metric("Valores en Cero", cant_ceros)
 
             st.markdown("---")
-            st.write("### ¿Cómo deseas limpiar esta variable?")
             
-            metodo = st.selectbox("Sustituir fallos por:", 
-                                ["Mantener originales", "MEDIA", "MEDIANA", "MODA", "0", "NAN", "Número específico"])
+            # PETICIÓN 2: Flujo Secuencial (Paso a Paso)
             
-            valor_manual = 0.0
-            if metodo == "Número específico":
-                valor_manual = st.number_input("Escribe el número:", value=0.0)
+            # PASO 1: Limpiar Errores/Vacíos
+            if cant_errores > 0:
+                st.write(f"### Paso 1: ¿Cómo deseas limpiar los {cant_errores} errores/vacíos?")
+                metodo_err = st.selectbox("Sustituir errores por:", 
+                                        ["Mantener", "NAN", "0", "MEDIA", "MEDIANA", "MODA"], key="err")
+                
+                if st.button(f"🚀 Aplicar Paso 1 a {col_select}"):
+                    if metodo_err != "Mantener":
+                        final_val = calcular_sustituto(serie_num, metodo_err)
+                        
+                        nuevo_df = st.session_state['df_master'].copy()
+                        # Solo rellenamos donde había errores (NaNs actuales)
+                        nuevo_df[col_select] = serie_num.fillna(final_val)
+                        
+                        st.session_state['df_master'] = nuevo_df
+                        st.toast(f"¡Errores de {col_select} limpiados!")
+                        st.rerun()
+            else:
+                st.write("✔️ No se detectaron errores de texto o celdas vacías.")
 
-            if st.button(f"🚀 Aplicar Limpieza a {col_select}"):
-                if metodo != "Mantener originales":
-                    if metodo == "Número específico":
-                        final_val = valor_manual
-                    else:
-                        final_val = calcular_sustituto(serie_num, metodo)
+            # PASO 2: Limpiar Ceros (Solo aparece si el Paso 1 está OK o no hay errores)
+            st.markdown("---")
+            if cant_ceros > 0:
+                st.write(f"### Paso 2: ¿Deseas limpiar los {cant_ceros} valores en CERO?")
+                confirm_cero = st.radio("¿Son valores reales?", ["Sí (Mantener)", "No (Sustituir)"], horizontal=True)
+                
+                if confirm_cero == "No (Sustituir)":
+                    metodo_cero = st.selectbox("Sustituir ceros por:", 
+                                             ["MEDIA", "MEDIANA", "MODA", "NAN"], key="cero")
                     
-                    # Aplicamos la misma lógica de Colab:
-                    # 1. Errores de texto se limpian
-                    # 2. Vacíos se limpian
-                    # 3. Ceros (solo si el usuario quiere, aquí lo simplificamos a que limpie todo lo no-numérico)
-                    nuevo_df = st.session_state['df_master'].copy()
-                    nuevo_df[col_select] = serie_num.fillna(final_val)
-                    
-                    st.session_state['df_master'] = nuevo_df
-                    st.toast(f"¡Variable {col_select} limpiada con éxito!")
-                    st.rerun()
+                    if st.button(f"🚀 Aplicar Paso 2 a {col_select}"):
+                        # Para calcular MEDIA/MEDIANA/MODA sin contar los ceros actuales
+                        temp_serie = serie_num.replace(0, np.nan)
+                        final_val_cero = calcular_sustituto(temp_serie, metodo_cero)
+                        
+                        nuevo_df = st.session_state['df_master'].copy()
+                        # Reemplazamos los ceros por el valor calculado
+                        nuevo_df[col_select] = serie_num.replace(0, final_val_cero)
+                        
+                        st.session_state['df_master'] = nuevo_df
+                        st.toast(f"¡Ceros de {col_select} sustituidos con éxito!")
+                        st.rerun()
+            else:
+                st.write("✔️ No se detectaron valores en cero.")
+
         else:
-            st.warning(f"La variable '{col_select}' parece ser puramente TEXTUAL.")
+            st.warning(f"La variable '{col_select}' es TEXTUAL. No requiere esta limpieza.")
 
     # --- 2. TAB UNIVARIADO ---
     with tab_univ:
@@ -115,34 +131,28 @@ if archivo_cargado:
     # --- 3. TAB BIVARIADO ---
     with tab_biv:
         st.header("Configuración de Cruces para el Excel")
-        st.info("Selecciona las variables que aparecerán en las COLUMNAS del reporte final.")
         vars_seleccionadas = st.multiselect("Variables de Cruce (Columnas)", df.columns)
 
     # --- 4. TAB RESPUESTA MÚLTIPLE ---
     with tab_mult:
         st.header("Configuración de Conjuntos")
         with st.form("fm_multi"):
-            nom_g = st.text_input("Nombre del Conjunto (ej: Marcas)", value=f"Grupo {len(st.session_state['grupos_multiples'])+1}")
-            cols_g = st.multiselect("Selecciona las columnas a agrupar", df.columns)
-            if st.form_submit_button("✅ Registrar este Grupo"):
+            nom_g = st.text_input("Nombre del Conjunto", value=f"Grupo {len(st.session_state['grupos_multiples'])+1}")
+            cols_g = st.multiselect("Selecciona las columnas", df.columns)
+            if st.form_submit_button("✅ Registrar"):
                 if cols_g:
                     df_s = df[cols_g]
                     n_p = df_s.notna().any(axis=1).sum()
                     menc = df_s.stack().value_counts()
                     t_mr = pd.DataFrame({
-                        'Menciones (f)': menc,
-                        '% de Casos (Base Personas)': (menc / n_p * 100).round(1),
-                        '% de Respuestas (Base Menciones)': (menc / menc.sum() * 100).round(1)
-                    }).sort_values('Menciones (f)', ascending=False)
-                    
-                    st.session_state['grupos_multiples'].append({
-                        'nombre': nom_g, 'tabla': t_mr, 'n_personas': n_p, 
-                        'columnas': cols_g, 'total_menciones': menc.sum()
-                    })
+                        'Menciones': menc,
+                        '% Casos': (menc / n_p * 100).round(1),
+                        '% Respuestas': (menc / menc.sum() * 100).round(1)
+                    }).sort_values('Menciones', ascending=False)
+                    st.session_state['grupos_multiples'].append({'nombre': nom_g, 'tabla': t_mr, 'n_personas': n_p, 'columnas': cols_g, 'total_menciones': menc.sum()})
                     st.rerun()
-        
         for g in st.session_state['grupos_multiples']:
-            st.write(f"✔️ **{g['nombre']}** ({len(g['columnas'])} variables registradas)")
+            st.write(f"✔️ **{g['nombre']}** registrada.")
 
     # --- BOTÓN GENERAR EXCEL ---
     st.sidebar.markdown("---")
@@ -167,9 +177,7 @@ if archivo_cargado:
                     for vf in [c for c in df.columns if c not in vars_seleccionadas]:
                         es_vc_num = pd.api.types.is_numeric_dtype(df[vc])
                         es_vf_num = pd.api.types.is_numeric_dtype(df[vf])
-
                         if es_vc_num and es_vf_num: continue
-
                         if es_vc_num or es_vf_num:
                             v_num, v_cat = (vc, vf) if es_vc_num else (vf, vc)
                             res = df.groupby(v_cat)[v_num].agg(['count', 'mean', 'std']).round(2)
@@ -179,7 +187,7 @@ if archivo_cargado:
                         else:
                             sh_bi1.write(r_b1, 0, f"Cruce: {vf} vs {vc}", fmt_bold)
                             ct = (pd.crosstab(df[vf], df[vc], normalize='columns')*100).round(1)
-                            col_sums = (pd.crosstab(df[vf], df[vc], normalize='columns')*100).sum()
+                            col_sums = ct.sum()
                             ct.loc['TOTAL'] = ["MULTIPLE" if s > 100.1 else "100.0%" for s in col_sums]
                             ct.to_excel(writer, sheet_name='BIVARIADO', startrow=r_b1+1)
                             r_b1 += len(ct) + 4
@@ -190,11 +198,15 @@ if archivo_cargado:
             for g in st.session_state['grupos_multiples']:
                 sh4.write(r_m, 0, f"CONJUNTO: {g['nombre']}", fmt_bold)
                 df_t = g['tabla'].copy()
-                sum_c = df_t['% de Casos (Base Personas)'].sum().round(1)
-                df_t.loc['TOTAL'] = [df_t['Menciones (f)'].sum(), f"{sum_c}% (MULTIPLE)", "100.0%"]
+                sum_c = df_t['% Casos'].sum().round(1)
+                df_t.loc['TOTAL'] = [df_t['Menciones'].sum(), f"{sum_c}% (MULTIPLE)", "100.0%"]
                 df_t.to_excel(writer, sheet_name='CONJUNTOS_MULTIPLES', startrow=r_m+1)
                 r_m += len(df_t) + 6
 
         st.sidebar.download_button("⬇️ DESCARGAR EXCEL FINAL", output.getvalue(), "Reporte_Papanajaco.xlsx")
+    
+    # PETICIÓN 3: La Notita de Advertencia
+    st.sidebar.caption("⚠️ Oprimir solo después de haber limpiado todas las variables y definido todos los cruces y conjuntos.")
+
 else:
-    st.info("Sube tu archivo para comenzar el análisis.")
+    st.info("Sube tu archivo para comenzar.")
