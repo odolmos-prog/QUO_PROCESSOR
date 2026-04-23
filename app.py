@@ -78,7 +78,7 @@ if archivo_cargado:
     if st.session_state['df_master'] is None:
         st.session_state['df_master'] = pd.read_excel(archivo_cargado)
     df = st.session_state['df_master']
-    st.title("🌟 Procesador Estadístico Profesional")
+    st.title("🌟 QUO Processor Powered by Doble O y Elisa")
     tab_limp, tab_univ, tab_biv, tab_mult = st.tabs(["🛠️ Limpieza", "📉 Univariado", "📊 Bivariado", "🔢 R. Múltiple"])
 
     with tab_limp:
@@ -142,7 +142,7 @@ if archivo_cargado:
 
     # --- REPORTE MEJORADO (EL CORAZÓN DE TU PETICIÓN) ---
     st.sidebar.markdown("---")
-    if st.sidebar.button("GENERAR REPORTE (solo después de realizar todas las operaciones"):
+    if st.sidebar.button("📊 GENERAR REPORTE (después de realizar todas las operaciones)"):
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
             workbook = writer.book
@@ -207,5 +207,5 @@ if archivo_cargado:
                 dt.loc['TOTAL'] = [dt['Menciones'].sum(), f"{dt['% Casos'].sum().round(1)}% (MULTIPLE)", "100.0%"]
                 dt.to_excel(writer, sheet_name='CONJUNTOS_MULTIPLES', startrow=r_m+1); r_m += len(dt) + 6
 
-        st.sidebar.download_button("⬇️ DESCARGAR REPORTE PRO", output.getvalue(), "Reporte_Papanajaco.xlsx")
+        st.sidebar.download_button("⬇️ DESCARGAR REPORTE", output.getvalue(), "Reporte_Papanajaco.xlsx")
 else: st.info("Sube tu archivo para comenzar.")
