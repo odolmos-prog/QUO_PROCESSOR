@@ -6,12 +6,14 @@ from statsmodels.stats.proportion import proportions_ztest
 import io
 import itertools
 
-# --- CONFIGURACIÓN (SIN CAMBIOS) ---
+# --- CONFIGURACIÓN ---
 st.set_page_config(page_title="QUO Processor Powered by Doble O y Elisa", layout="wide")
 st.markdown("""
     <style>
     .stButton>button { background-color: #2E5077; color: white; border-radius: 8px; font-weight: bold; }
     .stDownloadButton>button { background-color: #008000; color: white; border-radius: 8px; font-weight: bold; width: 100%; }
+    /* Ajuste de tamaño para el título principal */
+    .main-title { font-size: 28px !important; font-weight: bold; color: #2E5077; margin-bottom: 20px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -32,7 +34,7 @@ def realizar_test_proporciones(ct_abs):
     df_test = ct_abs.drop('TOTAL', axis=0).drop('TOTAL', axis=1)
     col_totals = df_test.sum()
     columnas = df_test.columns.tolist()
-    significancias = [] # (fila, col_ganadora)
+    significancias = [] 
     for index, row in df_test.iterrows():
         for col1, col2 in itertools.combinations(columnas, 2):
             count = np.array([row[col1], row[col2]])
@@ -49,7 +51,7 @@ def realizar_test_proporciones(ct_abs):
 def realizar_test_medias(df, v_num, v_cat):
     """Realiza test T entre pares de grupos (al 95%)."""
     columnas = df.groupby(v_cat)[v_num].mean().index.tolist()
-    significancias = [] # (v_cat_ganadora)
+    significancias = [] 
     for g1, g2 in itertools.combinations(columnas, 2):
         d1 = df[df[v_cat] == g1][v_num].dropna()
         d2 = df[df[v_cat] == g2][v_num].dropna()
@@ -70,7 +72,7 @@ if 'grupos_multiples' not in st.session_state:
 if 'limpieza_log' not in st.session_state:
     st.session_state['limpieza_log'] = {}
 
-# --- INTERFAZ (TOTALMENTE RESPETADA) ---
+# --- INTERFAZ ---
 st.sidebar.header("📁 CARGA DE DATOS")
 archivo_cargado = st.sidebar.file_uploader("Sube tu Excel", type=["xlsx"])
 
@@ -78,7 +80,10 @@ if archivo_cargado:
     if st.session_state['df_master'] is None:
         st.session_state['df_master'] = pd.read_excel(archivo_cargado)
     df = st.session_state['df_master']
-    st.title("🌟 QUO Processor Powered by Doble O y Elisa")
+    
+    # Título con tamaño ajustado
+    st.markdown('<p class="main-title">🌟 QUO Processor Powered by Doble O y Elisa</p>', unsafe_allow_html=True)
+    
     tab_limp, tab_univ, tab_biv, tab_mult = st.tabs(["🛠️ Limpieza", "📉 Univariado", "📊 Bivariado", "🔢 R. Múltiple"])
 
     with tab_limp:
@@ -151,31 +156,34 @@ if archivo_cargado:
             f_bold = workbook.add_format({'bold': True, 'border': 1})
             f_sig = workbook.add_format({'bg_color': '#C6EFCE', 'font_color': '#006100', 'bold': True, 'border': 1})
 
-            # PESTAÑA 1: UNIVARIADO (CON TEXTUALES)
+            # PESTAÑA 1: UNIVARIADO
             sh1 = workbook.add_worksheet('UNIVARIADO')
             sh1.write(0, 0, "ANÁLISIS UNIVARIADO", f_tit)
             row_u = 2
             if not df_num.empty:
                 sh1.write(row_u, 0, "Variables Numéricas", f_sub)
                 res.round(2).to_excel(writer, sheet_name='UNIVARIADO', startrow=row_u+1); row_u += len(res) + 4
+            
             sh1.write(row_u, 0, "Tablas de Frecuencia (Cualitativas)", f_sub); row_u += 1
             for c in df.select_dtypes(exclude=[np.number]).columns:
                 sh1.write(row_u, 0, f"Variable: {c}", f_bold)
                 f = df[c].value_counts(dropna=False).reset_index()
                 f.columns = ['Categoría', 'N']; f['%'] = (f['N']/f['N'].sum()*100).round(1)
+                
+                # AÑADIR FILA TOTAL (CORRECCIÓN)
+                f.loc[len(f)] = ['TOTAL', f['N'].sum(), 100.0]
+                
                 f.to_excel(writer, sheet_name='UNIVARIADO', startrow=row_u+1, index=False); row_u += len(f) + 3
 
-            # PESTAÑAS BIVARIADAS CON TESTS
+            # PESTAÑAS BIVARIADAS
             sh_bi1 = workbook.add_worksheet('BIVARIADO'); sh_bi2 = workbook.add_worksheet('BIVARIADO 2')
             r1, r2 = 2, 2
             if vars_sel:
                 for vc in vars_sel:
                     for vf in [c for c in df.columns if c not in vars_sel]:
-                        es_vc_n = pd.api.types.is_numeric_dtype(df[vc])
-                        es_vf_n = pd.api.types.is_numeric_dtype(df[vf])
+                        es_vc_n, es_vf_n = pd.api.types.is_numeric_dtype(df[vc]), pd.api.types.is_numeric_dtype(df[vf])
                         if es_vc_n and es_vf_n: continue
                         
-                        # CUALI-CUALI
                         if not es_vc_n and not es_vf_n:
                             sh_bi1.write(r1, 0, f"Cruce: {vf} vs {vc}", f_bold)
                             ct_abs = pd.crosstab(df[vf], df[vc], margins=True, margins_name="TOTAL")
@@ -188,7 +196,6 @@ if archivo_cargado:
                             for f_s, c_s in sigs:
                                 writer.sheets['BIVARIADO'].write(f_idx.index(f_s)+r1+2, c_idx.index(c_s)+1, ct_per.loc[f_s, c_s], f_sig)
                             r1 += len(ct_per) + 5
-                        # CUANTI-CUALI
                         else:
                             v_n, v_c = (vc, vf) if es_vc_n else (vf, vc)
                             sh_bi2.write(r2, 0, f"Análisis de {v_n} por {v_c}", f_bold)
@@ -200,7 +207,6 @@ if archivo_cargado:
                                 writer.sheets['BIVARIADO 2'].write(f_idx.index(s_cat)+r2+2, 2, rb.loc[s_cat, 'mean'], f_sig)
                             r2 += len(rb) + 5
 
-            # CONJUNTOS_MULTIPLES
             sh4 = workbook.add_worksheet('CONJUNTOS_MULTIPLES'); r_m = 1
             for g in st.session_state['grupos_multiples']:
                 sh4.write(r_m, 0, f"CONJUNTO: {g['nombre']}", f_bold); dt = g['tabla'].copy()
