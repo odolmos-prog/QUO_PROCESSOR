@@ -7,7 +7,7 @@ import io
 import itertools
 
 # --- 1. CONFIGURACIÓN Y ESTILO ---
-st.set_page_config(page_title="QUO Processor", layout="wide")
+st.set_page_config(page_title="QUO Processor by Doble O & Elisa", layout="wide")
 st.markdown("""
     <style>
     .stButton>button { background-color: #2E5077; color: white; border-radius: 8px; font-weight: bold; }
@@ -84,7 +84,7 @@ if archivo:
         st.rerun()
 
     df = st.session_state['df_master']
-    st.markdown('<p class="main-title">🌟 QUO Processor Powered by Doble O y Elisa</p>', unsafe_allow_html=True)
+    st.markdown('<p class="main-title">🌟 QUO Processor by Doble O y Elisa</p>', unsafe_allow_html=True)
     tabs = st.tabs(["🛠️ Limpieza", "📉 Univariado", "📊 Bivariado", "🔢 R. Múltiple"])
 
     # --- TAB LIMPIEZA (FRONT RESTAURADO) ---
