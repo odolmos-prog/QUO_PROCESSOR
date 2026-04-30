@@ -6,6 +6,9 @@ from statsmodels.stats.proportion import proportions_ztest
 import io
 import itertools
 
+st.sidebar.markdown('<p style="font-weight: bold; color: #2E5077; font-size: 18px; margin-bottom: -10px;">QUO Processor by Doble O y Elisa</p>', unsafe_allow_html=True)
+archivo = st.sidebar.file_uploader("Sube tu Excel", type=["xlsx"], on_change=reset_all)
+
 # --- 1. CONFIGURACIÓN Y ESTILO ---
 st.set_page_config(page_title="QUO Processor by Doble O & Elisa", layout="wide")
 st.markdown("""
