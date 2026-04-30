@@ -224,4 +224,6 @@ if archivo:
                 gt.to_excel(writer, sheet_name='MÚLTIPLE', startrow=r_m+1); r_m += len(gt)+4
 
         st.sidebar.download_button("⬇️ DESCARGAR", out.getvalue(), "Reporte_QUO_Final.xlsx")
-else: st.info("Sube tu archivo.")
+else: 
+    st.markdown('<p style="font-weight: bold; color: #2E5077; font-size: 22px; margin-bottom: 10px;">QUO Processor by Doble O & Elisa</p>', unsafe_allow_html=True)
+    st.info("Sube tu archivo.")
