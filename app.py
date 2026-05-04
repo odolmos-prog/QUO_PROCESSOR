@@ -84,7 +84,7 @@ if archivo:
         st.rerun()
 
     df = st.session_state['df_master']
-    st.markdown('<p class="main-title">🌟 QUO Processor by Grupo QUO. omarolmos@grupoquo.net </p>', unsafe_allow_html=True)
+    st.markdown('<p class="main-title">🌟 QUO Processor by Grupo QUO. Contacto: omarolmos@grupoquo.net </p>', unsafe_allow_html=True)
     tabs = st.tabs(["🛠️ Limpieza", "📉 Univariado", "📊 Bivariado", "🔢 R. Múltiple"])
 
     # --- TAB LIMPIEZA (FRONT RESTAURADO) ---
