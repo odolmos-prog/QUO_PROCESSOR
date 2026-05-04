@@ -225,5 +225,5 @@ if archivo:
 
         st.sidebar.download_button("⬇️ DESCARGAR", out.getvalue(), "Reporte_QUO_Final.xlsx")
 else: 
-    st.markdown('<p style="font-weight: bold; color: #2E5077; font-size: 22px; margin-bottom: 10px;">QUO Processor by Grupo QUO.</p>', unsafe_allow_html=True)
+    st.markdown('<p style="font-weight: bold; color: #2E5077; font-size: 22px; margin-bottom: 10px;">QUO Processor by Grupo QUO. Contacto: omarolmos@grupoquo.net </p>', unsafe_allow_html=True)
     st.info("Sube tu archivo.")
