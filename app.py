@@ -225,5 +225,15 @@ if archivo:
 
         st.sidebar.download_button("⬇️ DESCARGAR", out.getvalue(), "Reporte_QUO_Final.xlsx")
 else: 
-    st.markdown('<p style="font-weight: bold; color: #2E5077; font-size: 22px; margin-bottom: 10px;">QUO Processor by Grupo QUO. Contacto: omarolmos@grupoquo.net </p>', unsafe_allow_html=True)
+    # 1. Mostramos el Logo (Asegúrate de que el archivo esté en GitHub con este nombre)
+    try:
+        st.image("LOGO.png", width=250) 
+    except:
+        # Si aún no subes el logo, la app no se romperá, solo mostrará el texto
+        pass
+
+    # 2. El nombre del procesador con tu contacto
+    st.markdown('<p style="font-weight: bold; color: #2E5077; font-size: 22px; margin-top: 10px; margin-bottom: 10px;">QUO Processor by Grupo QUO. Contacto: omarolmos@grupoquo.net </p>', unsafe_allow_html=True)
+    
+    # 3. El cuadro azul informativo
     st.info("Sube tu archivo.")
