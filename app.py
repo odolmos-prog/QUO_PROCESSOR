@@ -7,7 +7,7 @@ import io
 import itertools
 
 # --- 1. CONFIGURACIÓN Y ESTILO ---
-st.set_page_config(page_title="QUO Processor by Grupo QUO.", layout="wide")
+st.set_page_config(page_title="QUO Processor by Grupo QUO", layout="wide")
 st.markdown("""
     <style>
     .stButton>button { background-color: #2E5077; color: white; border-radius: 8px; font-weight: bold; }
